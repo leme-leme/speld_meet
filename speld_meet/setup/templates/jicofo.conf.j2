@@ -1,0 +1,44 @@
+// Jicofo configuration (HOCON format).
+// Adapted from jitsi/docker-jitsi-meet `jicofo/rootfs/defaults/jicofo.conf`
+// reduced to: XMPP auth, no visitors, no recording, single shard.
+//
+// {% raw %}`{{ var }}`{% endraw %} placeholders are filled in by
+// speld_meet.setup.install_jitsi._render_configs.
+
+jicofo {
+    authentication {
+        enabled = false
+    }
+
+    bridge {
+        brewery-jid = "jvbbrewery@internal-muc.{{ xmpp_domain }}"
+    }
+
+    conference {
+        enable-auto-owner = true
+    }
+
+    sctp {
+        enabled = true
+    }
+
+    xmpp {
+        client {
+            xmpp-domain = "{{ xmpp_domain }}"
+            domain = "{{ xmpp_auth_domain }}"
+            username = "focus"
+            password = "{{ prosody_admin_pwd }}"
+            conference-muc-jid = "muc.{{ xmpp_domain }}"
+            client-proxy = "focus.{{ xmpp_domain }}"
+            disable-certificate-verification = true
+        }
+
+        // Same Prosody handles the JVB control MUC — no separate jvb-xmpp.
+        service {
+            hostname = "localhost"
+            domain = "{{ xmpp_auth_domain }}"
+            username = "focus"
+            password = "{{ prosody_admin_pwd }}"
+        }
+    }
+}

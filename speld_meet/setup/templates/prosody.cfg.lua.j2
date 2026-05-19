@@ -1,0 +1,119 @@
+-- Prosody configuration for in-bench Jitsi.
+-- Adapted from jitsi/docker-jitsi-meet `prosody/rootfs/defaults/conf.d/jitsi-meet.cfg.lua`
+-- with Go template variables replaced by Jinja and the env-driven branches
+-- collapsed to the single mode we actually run (token auth, no JaaS, no
+-- visitors, single-shard, websocket on).
+--
+-- All occurrences of {% raw %}`{{ var }}`{% endraw %} are filled in by
+-- `speld_meet.setup.install_jitsi._render_configs`.
+
+admins = {
+    "focus@{{ xmpp_auth_domain }}",
+    "jvb@{{ xmpp_auth_domain }}"
+}
+
+unlimited_jids = {
+    "focus@{{ xmpp_auth_domain }}",
+    "jvb@{{ xmpp_auth_domain }}"
+}
+
+-- Plugin search path: the bundled jitsi-meet-prosody plugins (mod_auth_token,
+-- mod_muc_meeting_id, mod_speakerstats, mod_av_moderation, ...). Pulled out of
+-- the upstream .deb at install time; see _extract_deb for layout.
+plugin_paths = { "{{ prosody_plugins_dir }}" }
+
+muc_mapper_domain_base = "{{ xmpp_domain }}"
+muc_mapper_domain_prefix = "muc"
+
+cross_domain_websocket = true
+consider_websocket_secure = true
+consider_bosh_secure = true
+
+ssl = {
+    -- We don't terminate TLS at Prosody — Frappe's nginx fronts everything.
+    -- Prosody listens plain on 5280/5222; nginx handles certs.
+    protocol = "tlsv1_2+";
+}
+
+-- Authentication / JWT
+--
+-- The JWT is HS256-signed with `jitsi_jwt_secret` from site_config.json. The
+-- same value is shared with the Frappe controller that mints tokens.
+asap_accepted_issuers = { "speld_meet" }
+asap_accepted_audiences = { "meet.speld" }
+
+VirtualHost "{{ xmpp_domain }}"
+    authentication = "token"
+    app_id = "speld_meet"
+    app_secret = "{{ jitsi_jwt_secret }}"
+    allow_empty_token = false
+    modules_enabled = {
+        "bosh";
+        "websocket";
+        "smacks";
+        "pubsub";
+        "ping";
+        "speakerstats";
+        "external_services";
+        "conference_duration";
+        "muc_lobby_rooms";
+        "av_moderation";
+        "presence_identity";
+    }
+    main_muc = "muc.{{ xmpp_domain }}"
+    speakerstats_component = "speakerstats.{{ xmpp_domain }}"
+    conference_duration_component = "conferenceduration.{{ xmpp_domain }}"
+    av_moderation_component = "avmoderation.{{ xmpp_domain }}"
+    c2s_require_encryption = false
+
+-- Internal auth domain used by JVB / Jicofo for their MUC presence.
+VirtualHost "{{ xmpp_auth_domain }}"
+    authentication = "internal_hashed"
+    modules_enabled = {
+        "limits_exception";
+    }
+
+-- MUC component — actual conferences live here.
+Component "muc.{{ xmpp_domain }}" "muc"
+    storage = "memory"
+    modules_enabled = {
+        "muc_meeting_id";
+        "polls";
+        "muc_domain_mapper";
+        "muc_password_whitelist";
+    }
+    admins = { "focus@{{ xmpp_auth_domain }}" }
+    muc_room_locking = false
+    muc_room_default_public_jids = true
+
+-- Internal MUC used by JVB to advertise itself to Jicofo (`jvbbrewery`).
+Component "internal-muc.{{ xmpp_domain }}" "muc"
+    storage = "memory"
+    modules_enabled = {
+        "ping";
+    }
+    admins = { "focus@{{ xmpp_auth_domain }}", "jvb@{{ xmpp_auth_domain }}" }
+    muc_room_locking = false
+    muc_room_default_public_jids = true
+
+-- Focus component — Jicofo's identity.
+Component "focus.{{ xmpp_domain }}"
+    component_secret = "{{ jitsi_jwt_secret }}"
+
+-- Side components (avoid disabling — Jicofo expects them present).
+Component "speakerstats.{{ xmpp_domain }}" "speakerstats_component"
+    muc_component = "muc.{{ xmpp_domain }}"
+
+Component "conferenceduration.{{ xmpp_domain }}" "conference_duration_component"
+    muc_component = "muc.{{ xmpp_domain }}"
+
+Component "avmoderation.{{ xmpp_domain }}" "av_moderation_component"
+    muc_component = "muc.{{ xmpp_domain }}"
+
+-- Daemonize / pidfile / logging — point at bench's logs/ so `bench restart`
+-- can rotate them.
+daemonize = false
+pidfile = "/dev/null"
+log = {
+    { levels = { min = "info" }, to = "console" };
+}

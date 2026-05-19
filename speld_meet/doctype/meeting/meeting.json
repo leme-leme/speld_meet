@@ -1,0 +1,131 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:room_slug",
+ "creation": "2026-05-20 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "room_slug",
+  "title",
+  "host",
+  "scheduled_time",
+  "status",
+  "duration_seconds",
+  "section_break_participants",
+  "participants",
+  "section_break_roles",
+  "required_roles",
+  "section_break_meta",
+  "recording_file_url"
+ ],
+ "fields": [
+  {
+   "fieldname": "room_slug",
+   "fieldtype": "Data",
+   "label": "Room slug",
+   "reqd": 1,
+   "unique": 1,
+   "in_list_view": 1,
+   "description": "Used as the URL segment in /meet/<room_slug>. Letters, digits and dashes only."
+  },
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "label": "Title",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "host",
+   "fieldtype": "Link",
+   "options": "User",
+   "label": "Host",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "scheduled_time",
+   "fieldtype": "Datetime",
+   "label": "Scheduled time",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "options": "Scheduled\nActive\nEnded",
+   "default": "Scheduled",
+   "label": "Status",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "duration_seconds",
+   "fieldtype": "Int",
+   "label": "Duration (seconds)",
+   "read_only": 1,
+   "description": "Computed when status flips to Ended. Sum of participant join→leave intervals is not tracked here; this is total wall-clock minutes."
+  },
+  {
+   "fieldname": "section_break_participants",
+   "fieldtype": "Section Break",
+   "label": "Participants"
+  },
+  {
+   "fieldname": "participants",
+   "fieldtype": "Table",
+   "options": "Meeting Participant",
+   "label": "Participants"
+  },
+  {
+   "fieldname": "section_break_roles",
+   "fieldtype": "Section Break",
+   "label": "Access control"
+  },
+  {
+   "fieldname": "required_roles",
+   "fieldtype": "Table",
+   "options": "Meeting Required Role",
+   "label": "Required roles",
+   "description": "If any rows are present, joining users must hold at least one of these Frappe roles. Empty = open to anyone with the Meeting record's URL."
+  },
+  {
+   "fieldname": "section_break_meta",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "recording_file_url",
+   "fieldtype": "Data",
+   "label": "Recording file URL",
+   "description": "Reserved for the P4 Jibri integration. Empty for in-browser meetings."
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-05-20 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Speld Meet",
+ "name": "Meeting",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "Speld Editor"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

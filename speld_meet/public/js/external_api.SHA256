@@ -1,0 +1,12 @@
+# Pinned upstream Jitsi external_api.js
+#
+# Source:    https://meet.jit.si/external_api.js
+# Fetched:   2026-05-20
+# SHA-256:   1bf99acab4d7f5df996012c65cd97936bbeafe145a28cab855b8178827cf7b57
+# Size:      97310 bytes
+# License:   Apache-2.0
+#
+# To refresh:
+#   curl -sSL https://meet.jit.si/external_api.js -o external_api.js
+#   shasum -a 256 external_api.js
+# Update this file and the speld_meet/www/meet.html cache-buster comment.

@@ -1,0 +1,21 @@
+[project]
+name = "speld_meet"
+authors = [
+    { name = "De Speld", email = "redactie@speld.nl" },
+]
+description = "In-bench Jitsi Meet for the De Speld Frappe stack — Meeting doctype + JWT-gated rooms + Procfile-supervised Prosody/Jicofo/JVB/Coturn."
+requires-python = ">=3.10"
+readme = "README.md"
+dynamic = ["version"]
+dependencies = [
+    # PyJWT is the only runtime dep beyond Frappe itself: the controllers
+    # mint short-lived HS256 tokens for the in-bench Prosody to validate.
+    "PyJWT>=2.8",
+]
+
+[build-system]
+requires = ["flit_core >=3.4,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.module]
+name = "speld_meet"

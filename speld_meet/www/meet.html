@@ -1,0 +1,100 @@
+{% extends "templates/web.html" %}
+
+{%- block title -%}{{ meeting.title or meeting.room_slug }} — Speld Meet{%- endblock -%}
+
+{%- block head_include -%}
+<style>
+    /* Full-bleed conference — strip Frappe's website chrome padding. */
+    .web-page-container,
+    .page_content,
+    .web-page,
+    .container,
+    main {
+        max-width: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    #jitsi-meet {
+        position: fixed;
+        inset: 0;
+        background: #111;
+    }
+    #jitsi-loading {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #ddd;
+        font: 16px/1.4 -apple-system, system-ui, sans-serif;
+    }
+</style>
+{%- endblock -%}
+
+{%- block content -%}
+<div id="jitsi-loading">Connecting to {{ meeting.title or meeting.room_slug }}…</div>
+<div id="jitsi-meet"></div>
+
+<script src="/assets/speld_meet/js/external_api.js"></script>
+<script>
+(function () {
+    // Server-rendered constants — the JWT is the one minted in meet.py's
+    // get_context(), already scoped to this user + room.
+    var ROOM = {{ room | tojson }};
+    var JWT  = {{ jwt | tojson }};
+    var HOST = {{ jitsi_host | tojson }};
+    var MEETING_NAME = {{ meeting.name | tojson }};
+    var USER_NAME = {{ user_full_name | tojson }};
+
+    var api = new JitsiMeetExternalAPI(HOST, {
+        roomName: ROOM,
+        parentNode: document.getElementById("jitsi-meet"),
+        jwt: JWT,
+        userInfo: { displayName: USER_NAME },
+        configOverwrite: {
+            // Frappe nginx terminates TLS — Jitsi must use wss:// to the same host.
+            websocket: "wss://" + HOST + "/xmpp-websocket",
+            // colibri-ws is JVB's own websocket — same nginx proxies it to :9090.
+            // The bridge advertises it via jvb.conf's videobridge.websockets stanza.
+            prejoinPageEnabled: false,
+            disableDeepLinking: true,
+        },
+        interfaceConfigOverwrite: {
+            SHOW_JITSI_WATERMARK: false,
+            SHOW_WATERMARK_FOR_GUESTS: false,
+        },
+    });
+
+    // Hide the loading placeholder once the iframe is constructed.
+    document.getElementById("jitsi-loading").style.display = "none";
+
+    // Hook the lifecycle events back to the Frappe controllers so the
+    // Meeting record gets joined_at / left_at / status updates.
+    function call(method, args) {
+        return frappe.call({
+            method: "speld_meet.controllers." + method,
+            args: args,
+        }).catch(function (err) {
+            // Swallow — losing a participant marker shouldn't kill the call.
+            console.warn("speld_meet:" + method + " failed", err);
+        });
+    }
+
+    api.addListener("videoConferenceJoined", function () {
+        call("participant_joined", { meeting_name: MEETING_NAME });
+    });
+    api.addListener("participantLeft", function (event) {
+        // This fires for ANY participant; only act when it's the local user.
+        // The 'videoConferenceLeft' event is the local-user-specific one.
+    });
+    api.addListener("videoConferenceLeft", function () {
+        call("participant_left", { meeting_name: MEETING_NAME });
+    });
+    api.addListener("readyToClose", function () {
+        // Last person standing — flip status to Ended and finalize duration.
+        call("meeting_ended", { meeting_name: MEETING_NAME }).then(function () {
+            window.location.href = "/app/meeting/" + MEETING_NAME;
+        });
+    });
+})();
+</script>
+{%- endblock -%}

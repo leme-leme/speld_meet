@@ -1,0 +1,61 @@
+// Jitsi Videobridge configuration (HOCON).
+// Adapted from jitsi/docker-jitsi-meet `jvb/rootfs/defaults/jvb.conf` —
+// single bridge, no Octo, colibri-ws on, advertise the public site host
+// as the candidate (Frappe nginx proxies /colibri-ws to localhost:9090).
+//
+// {% raw %}`{{ var }}`{% endraw %} placeholders are filled in by
+// speld_meet.setup.install_jitsi._render_configs.
+
+videobridge {
+    cc {
+        trust-bwe = true
+    }
+    ice {
+        udp {
+            port = 10000
+        }
+        advertise-private-candidates = true
+    }
+    apis {
+        xmpp-client {
+            configs {
+                shard {
+                    HOSTNAME = "localhost"
+                    DOMAIN = "{{ xmpp_auth_domain }}"
+                    USERNAME = "jvb"
+                    PASSWORD = "{{ jvb_auth_pwd }}"
+                    MUC_JIDS = "jvbbrewery@internal-muc.{{ xmpp_domain }}"
+                    MUC_NICKNAME = "jvb-1"
+                    DISABLE_CERTIFICATE_VERIFICATION = true
+                }
+            }
+        }
+    }
+    websockets {
+        enabled = true
+        domain = "{{ site_domain }}:443"
+        tls = true
+        server-id = "default"
+    }
+    http-servers {
+        public {
+            port = 9090
+        }
+        private {
+            port = 8080
+        }
+    }
+    sctp {
+        enabled = true
+    }
+}
+
+ice4j {
+    harvest {
+        mapping {
+            stun {
+                addresses = [ "meet-jit-si-turnrelay.jitsi.net:443" ]
+            }
+        }
+    }
+}

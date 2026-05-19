@@ -1,0 +1,40 @@
+# Coturn configuration for in-bench TURN/STUN.
+# Adapted from coturn's debian default config trimmed to the lines that
+# matter for a Jitsi front-end: ephemeral credentials backed by a shared
+# secret, TURN+STUN on 3478/UDP and 5349/TLS, no user database.
+#
+# {% raw %}`{{ var }}`{% endraw %} placeholders are filled in by
+# speld_meet.setup.install_jitsi._render_configs.
+
+listening-port=3478
+tls-listening-port=5349
+
+# Bind to all interfaces — bench's host firewall is the gate, not coturn's.
+listening-ip=0.0.0.0
+
+# Realm = public site host so the JVB can reference us by name from
+# external_services in prosody.cfg.lua.
+realm={{ site_domain }}
+server-name={{ site_domain }}
+
+# Ephemeral-credential mode. The shared secret matches `coturn_secret`
+# in site_config.json; Frappe doesn't currently hand TURN creds to the
+# client (Jitsi uses its bundled external_services), but coturn refuses
+# to start without the secret.
+use-auth-secret
+static-auth-secret={{ coturn_secret }}
+
+# Relay UDP only — most Jitsi clients prefer TCP via the websocket anyway.
+no-tcp-relay
+
+# Logging — coturn defaults to syslog, point at stderr so bench-coturn.log
+# captures it.
+no-stdout-log
+log-file=stdout
+verbose
+
+# Lock down a few things coturn defaults to that we don't want.
+no-cli
+no-multicast-peers
+no-loopback-peers
+prod
