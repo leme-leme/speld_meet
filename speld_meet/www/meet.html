@@ -76,14 +76,17 @@
 <div id="jitsi-loading" style="display:none">Connecting to {{ meeting.title or meeting.room_slug }}…</div>
 <div id="jitsi-meet"></div>
 
-<script src="/assets/speld_meet/js/external_api.js"></script>
+<script src="{{ external_api_url }}"></script>
 <script>
 (function () {
     // Server-rendered constants — the JWT is the one minted in meet.py's
-    // get_context(), already scoped to this user + room.
+    // get_context(), already scoped to this user + room. JWT is null in
+    // "public" (meet.jit.si) mode.
     var ROOM = {{ room | tojson }};
+    var ROOM_SLUG = {{ room_slug | tojson }};
     var JWT  = {{ jwt | tojson }};
     var HOST = {{ jitsi_host | tojson }};
+    var MODE = {{ meet_mode | tojson }};
     var MEETING_NAME = {{ meeting.name | tojson }};
     var USER_NAME = {{ user_full_name | tojson }};
 
@@ -101,7 +104,9 @@
 
     // ── pre-join affordances ────────────────────────────────────────────
     document.getElementById("copy-invite").addEventListener("click", function () {
-        var url = window.location.origin + "/meet/" + ROOM;
+        // Invite link is the Frappe route (room_slug), not the backend-
+        // specific Jitsi room name (which may carry a tenant prefix).
+        var url = window.location.origin + "/meet/" + ROOM_SLUG;
         var btn = this;
         navigator.clipboard.writeText(url).then(function () {
             var old = btn.textContent;
@@ -119,23 +124,32 @@
         document.getElementById("prejoin").style.display = "none";
         document.getElementById("jitsi-loading").style.display = "grid";
 
-        api = new JitsiMeetExternalAPI(HOST, {
+        var configOverwrite = {
+            // We run our own pre-join above, so disable Jitsi's.
+            prejoinPageEnabled: false,
+            disableDeepLinking: true,
+        };
+        // Only the self-hosted in-bench backend needs the same-origin wss://
+        // override (Frappe nginx terminates TLS). meet.jit.si and JaaS use
+        // their own websocket endpoints — overriding breaks them.
+        if (MODE === "inbench") {
+            configOverwrite.websocket = "wss://" + HOST + "/xmpp-websocket";
+        }
+
+        var options = {
             roomName: ROOM,
             parentNode: document.getElementById("jitsi-meet"),
-            jwt: JWT,
             userInfo: { displayName: USER_NAME },
-            configOverwrite: {
-                // Frappe nginx terminates TLS — Jitsi must use wss:// to the same host.
-                websocket: "wss://" + HOST + "/xmpp-websocket",
-                // We run our own pre-join above, so disable Jitsi's.
-                prejoinPageEnabled: false,
-                disableDeepLinking: true,
-            },
+            configOverwrite: configOverwrite,
             interfaceConfigOverwrite: {
                 SHOW_JITSI_WATERMARK: false,
                 SHOW_WATERMARK_FOR_GUESTS: false,
             },
-        });
+        };
+        // Public meet.jit.si rooms take no JWT; only attach one when minted.
+        if (JWT) { options.jwt = JWT; }
+
+        api = new JitsiMeetExternalAPI(HOST, options);
 
         // Hide the loading placeholder once the iframe is constructed.
         document.getElementById("jitsi-loading").style.display = "none";

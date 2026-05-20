@@ -56,7 +56,10 @@ def get_context(context):
         "meeting": meeting,
         "jwt": token["jwt"],
         "room": token["room"],
+        "room_slug": token["room_slug"],
         "jitsi_host": token["domain"],
+        "external_api_url": token["external_api_url"],
+        "meet_mode": token["mode"],
         "host_full_name": host_full_name,
         "user_full_name": frappe.db.get_value("User", frappe.session.user, "full_name") or frappe.session.user,
     })

@@ -60,66 +60,149 @@ def _get_meeting(meeting_name: str):
     return meeting
 
 
+# ── meeting backend selection ───────────────────────────────────────────────
+#
+# speld_meet works against three WebRTC backends, picked at runtime from
+# site_config.json so the same app code runs everywhere:
+#
+#   1. "jaas"    — Jitsi-as-a-Service (8x8). Needs `jaas_app_id` +
+#                  `jaas_private_key` (RS256 PEM) + optional `jaas_key_id`.
+#                  Authenticated, role-gated, zero server install. Recommended.
+#   2. "inbench" — self-hosted Jitsi on this bench. Needs `jitsi_jwt_secret`
+#                  (HS256), written by speld_meet.setup.install_jitsi.
+#   3. "public"  — meet.jit.si. No JWT, public rooms. Zero config; the
+#                  fallback when neither of the above is configured so /meet
+#                  rooms always carry a call.
+#
+# Precedence: jaas > inbench > public. The Frappe-side role check
+# (_check_room_access) gates every path regardless of backend auth.
+
+_JAAS_DOMAIN = "8x8.vc"
+_PUBLIC_DOMAIN = "meet.jit.si"
+
+
+def _meet_backend() -> tuple[str, str, str | None]:
+    """Return (mode, jitsi_domain, app_id) from site_config."""
+    conf = frappe.conf
+    if conf.get("jaas_app_id") and conf.get("jaas_private_key"):
+        return ("jaas", _JAAS_DOMAIN, conf.get("jaas_app_id"))
+    if conf.get("jitsi_jwt_secret"):
+        return ("inbench", frappe.local.site, None)
+    return ("public", _PUBLIC_DOMAIN, None)
+
+
+def _external_api_url(mode: str, app_id: str | None) -> str:
+    """Where the page loads Jitsi's iframe-API JS from, per backend."""
+    if mode == "jaas":
+        return f"https://{_JAAS_DOMAIN}/{app_id}/external_api.js"
+    if mode == "public":
+        return f"https://{_PUBLIC_DOMAIN}/external_api.js"
+    # in-bench: vendored, served same-origin so it shares the site's TLS.
+    return "/assets/speld_meet/js/external_api.js"
+
+
 # ── mint_jwt ───────────────────────────────────────────────────────────────
 
 
 @frappe.whitelist()
 def mint_jwt(meeting_name: str) -> dict:
-    """Issue a short-lived HS256 JWT for the in-bench Prosody to validate.
+    """Resolve the backend and issue the right token (or none) for the SPA.
 
-    Claims shape (matches `prosody-mod-auth-token`'s expectations):
-
+    Returns:
         {
-            "aud": "meet.speld",                # asap_accepted_audiences
-            "iss": "speld_meet",                # asap_accepted_issuers
-            "sub": "<site host>",               # the XMPP_DOMAIN
-            "room": "<room_slug>",              # meeting.room_slug
-            "exp": <epoch seconds>,
-            "iat": <epoch seconds>,
-            "context": {
-                "user": {
-                    "id":     "<frappe user id (email)>",
-                    "name":   "<full name>",
-                    "email":  "<email>",
-                    "avatar": "<gravatar url>",
-                    "roles":  ["...", ...]      # current user's Frappe roles
-                },
-                "room": {
-                    "required_roles": ["..."]   # from Meeting.required_roles
-                }
-            }
+            "jwt":              <token str | None>,   # None for public mode
+            "room":             <Jitsi room name>,    # backend-specific
+            "room_slug":        <Frappe route slug>,  # for invite links
+            "domain":           <Jitsi host>,
+            "external_api_url": <iframe-API JS url>,
+            "mode":             "jaas" | "inbench" | "public",
         }
-    """
-    # Lazy import — pyjwt is in the app's pyproject deps but importing at
-    # module top-level adds startup cost to every Frappe worker.
-    import jwt
 
+    `room` differs from `room_slug`:
+      - jaas:    room = "<app_id>/<slug>"  (8x8 namespaces by tenant)
+      - public:  room = "speld<slug>"      (namespaced in the global meet.jit.si
+                                            space; slug is already a random hash)
+      - inbench: room = "<slug>"
+    """
     meeting = _get_meeting(meeting_name)
-    secret = frappe.conf.get("jitsi_jwt_secret")
-    if not secret:
-        frappe.throw(
-            "site_config.json is missing jitsi_jwt_secret — run "
-            "`bench --site <site> execute speld_meet.setup.install_jitsi.install_jitsi`"
-        )
+    mode, domain, app_id = _meet_backend()
+    slug = meeting.room_slug
 
     user = frappe.get_doc("User", frappe.session.user)
     user_roles = frappe.get_roles(user.name)
-
+    is_host = frappe.session.user == meeting.host
     now = int(time.time())
+
+    base = {
+        "room_slug": slug,
+        "domain": domain,
+        "external_api_url": _external_api_url(mode, app_id),
+        "mode": mode,
+    }
+
+    # Public meet.jit.si — no JWT. Room namespaced so our random slug doesn't
+    # collide with someone else's public room. meet.jit.si strips most
+    # punctuation from room names, so keep it alphanumeric.
+    if mode == "public":
+        room = "speld" + slug.replace("-", "")
+        return {"jwt": None, "room": room, **base}
+
+    # Lazy import — pyjwt (+ cryptography for RS256) is a pyproject dep but
+    # importing at module top adds startup cost to every worker.
+    import jwt
+
+    if mode == "jaas":
+        private_key = frappe.conf.get("jaas_private_key")
+        key_id = frappe.conf.get("jaas_key_id") or ""
+        payload = {
+            "aud": "jitsi",
+            "iss": "chat",
+            "sub": app_id,
+            # JaaS matches this against the room joined (sans tenant prefix).
+            "room": slug,
+            "iat": now,
+            "nbf": now - 5,
+            "exp": now + _JWT_TTL_SECONDS,
+            "context": {
+                "user": {
+                    "id": user.name,
+                    "name": user.full_name or user.name,
+                    "email": user.email or user.name,
+                    "avatar": user.user_image or "",
+                    # JaaS reads moderator as a string "true"/"false".
+                    "moderator": "true" if is_host else "false",
+                },
+                # Conservative defaults; flip on per-tenant once needed.
+                "features": {
+                    "livestreaming": "false",
+                    "recording": "false",
+                    "transcription": "false",
+                    "outbound-call": "false",
+                },
+            },
+        }
+        headers = {"kid": f"{app_id}/{key_id}" if key_id else app_id, "typ": "JWT"}
+        token = jwt.encode(payload, private_key, algorithm="RS256", headers=headers)
+        if isinstance(token, bytes):
+            token = token.decode("ascii")
+        return {"jwt": token, "room": f"{app_id}/{slug}", **base}
+
+    # in-bench HS256 (matches prosody-mod-auth-token expectations).
+    secret = frappe.conf.get("jitsi_jwt_secret")
     payload = {
         "aud": "meet.speld",
         "iss": "speld_meet",
         "sub": frappe.local.site,
-        "room": meeting.room_slug,
+        "room": slug,
         "iat": now,
         "exp": now + _JWT_TTL_SECONDS,
         "context": {
             "user": {
-                "id":     user.name,
-                "name":   user.full_name or user.name,
-                "email":  user.email or user.name,
+                "id": user.name,
+                "name": user.full_name or user.name,
+                "email": user.email or user.name,
                 "avatar": user.user_image or "",
-                "roles":  user_roles,
+                "roles": user_roles,
             },
             "room": {
                 "required_roles": [r.role for r in (meeting.required_roles or [])],
@@ -127,15 +210,9 @@ def mint_jwt(meeting_name: str) -> dict:
         },
     }
     token = jwt.encode(payload, secret, algorithm="HS256")
-    # PyJWT 2.x returns str already; PyJWT 1.x returned bytes — coerce.
     if isinstance(token, bytes):
         token = token.decode("ascii")
-
-    return {
-        "jwt": token,
-        "room": meeting.room_slug,
-        "domain": frappe.local.site,
-    }
+    return {"jwt": token, "room": slug, **base}
 
 
 # ── participant_joined ─────────────────────────────────────────────────────
