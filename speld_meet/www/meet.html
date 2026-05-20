@@ -27,11 +27,53 @@
         color: #ddd;
         font: 16px/1.4 -apple-system, system-ui, sans-serif;
     }
+    /* Pre-join card — shown until the user clicks "Join now". */
+    #prejoin {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #111;
+        color: #eee;
+        font: 15px/1.5 -apple-system, system-ui, sans-serif;
+    }
+    #prejoin .card {
+        background: #1d1d1f;
+        border: 1px solid #333;
+        border-radius: 12px;
+        padding: 1.75rem 2rem;
+        width: min(420px, 90vw);
+        text-align: center;
+    }
+    #prejoin h1 { font-size: 1.4rem; margin: 0 0 0.25rem; color: #fff; }
+    #prejoin .host { color: #aaa; margin-bottom: 1.25rem; }
+    #prejoin .btn-row { display: flex; gap: 0.5rem; justify-content: center; }
+    #prejoin button {
+        border: none; border-radius: 8px; padding: 0.6rem 1.1rem;
+        font-size: 0.95rem; cursor: pointer;
+    }
+    #prejoin .join { background: #2d7ff9; color: #fff; }
+    #prejoin .copy { background: #333; color: #eee; }
+    #prejoin .copy.copied { background: #2e7d32; }
 </style>
 {%- endblock -%}
 
 {%- block content -%}
-<div id="jitsi-loading">Connecting to {{ meeting.title or meeting.room_slug }}…</div>
+<!-- Pre-join screen: meeting title + host + copy-invite + join. We don't
+     instantiate the Jitsi iframe until the user clicks Join, so the JWT
+     (minted server-side at render) isn't spent on an accidental tab open. -->
+<div id="prejoin">
+    <div class="card">
+        <h1>{{ meeting.title or meeting.room_slug }}</h1>
+        <div class="host">Hosted by {{ host_full_name }}</div>
+        <div class="btn-row">
+            <button class="copy" id="copy-invite">Copy invite link</button>
+            <button class="join" id="join-now">Join now</button>
+        </div>
+    </div>
+</div>
+
+<div id="jitsi-loading" style="display:none">Connecting to {{ meeting.title or meeting.room_slug }}…</div>
 <div id="jitsi-meet"></div>
 
 <script src="/assets/speld_meet/js/external_api.js"></script>
@@ -45,56 +87,112 @@
     var MEETING_NAME = {{ meeting.name | tojson }};
     var USER_NAME = {{ user_full_name | tojson }};
 
-    var api = new JitsiMeetExternalAPI(HOST, {
-        roomName: ROOM,
-        parentNode: document.getElementById("jitsi-meet"),
-        jwt: JWT,
-        userInfo: { displayName: USER_NAME },
-        configOverwrite: {
-            // Frappe nginx terminates TLS — Jitsi must use wss:// to the same host.
-            websocket: "wss://" + HOST + "/xmpp-websocket",
-            // colibri-ws is JVB's own websocket — same nginx proxies it to :9090.
-            // The bridge advertises it via jvb.conf's videobridge.websockets stanza.
-            prejoinPageEnabled: false,
-            disableDeepLinking: true,
-        },
-        interfaceConfigOverwrite: {
-            SHOW_JITSI_WATERMARK: false,
-            SHOW_WATERMARK_FOR_GUESTS: false,
-        },
-    });
+    var api = null;
 
-    // Hide the loading placeholder once the iframe is constructed.
-    document.getElementById("jitsi-loading").style.display = "none";
-
-    // Hook the lifecycle events back to the Frappe controllers so the
-    // Meeting record gets joined_at / left_at / status updates.
     function call(method, args) {
         return frappe.call({
             method: "speld_meet.controllers." + method,
             args: args,
         }).catch(function (err) {
-            // Swallow — losing a participant marker shouldn't kill the call.
+            // Swallow — losing a participant/chat marker shouldn't kill the call.
             console.warn("speld_meet:" + method + " failed", err);
         });
     }
 
-    api.addListener("videoConferenceJoined", function () {
-        call("participant_joined", { meeting_name: MEETING_NAME });
-    });
-    api.addListener("participantLeft", function (event) {
-        // This fires for ANY participant; only act when it's the local user.
-        // The 'videoConferenceLeft' event is the local-user-specific one.
-    });
-    api.addListener("videoConferenceLeft", function () {
-        call("participant_left", { meeting_name: MEETING_NAME });
-    });
-    api.addListener("readyToClose", function () {
-        // Last person standing — flip status to Ended and finalize duration.
-        call("meeting_ended", { meeting_name: MEETING_NAME }).then(function () {
-            window.location.href = "/app/meeting/" + MEETING_NAME;
+    // ── pre-join affordances ────────────────────────────────────────────
+    document.getElementById("copy-invite").addEventListener("click", function () {
+        var url = window.location.origin + "/meet/" + ROOM;
+        var btn = this;
+        navigator.clipboard.writeText(url).then(function () {
+            var old = btn.textContent;
+            btn.textContent = "Copied!";
+            btn.classList.add("copied");
+            setTimeout(function () { btn.textContent = old; btn.classList.remove("copied"); }, 1500);
         });
     });
+
+    document.getElementById("join-now").addEventListener("click", mountJitsi);
+
+    // ── mount Jitsi only on explicit Join ───────────────────────────────
+    function mountJitsi() {
+        if (api) return;
+        document.getElementById("prejoin").style.display = "none";
+        document.getElementById("jitsi-loading").style.display = "grid";
+
+        api = new JitsiMeetExternalAPI(HOST, {
+            roomName: ROOM,
+            parentNode: document.getElementById("jitsi-meet"),
+            jwt: JWT,
+            userInfo: { displayName: USER_NAME },
+            configOverwrite: {
+                // Frappe nginx terminates TLS — Jitsi must use wss:// to the same host.
+                websocket: "wss://" + HOST + "/xmpp-websocket",
+                // We run our own pre-join above, so disable Jitsi's.
+                prejoinPageEnabled: false,
+                disableDeepLinking: true,
+            },
+            interfaceConfigOverwrite: {
+                SHOW_JITSI_WATERMARK: false,
+                SHOW_WATERMARK_FOR_GUESTS: false,
+            },
+        });
+
+        // Hide the loading placeholder once the iframe is constructed.
+        document.getElementById("jitsi-loading").style.display = "none";
+
+        wireLifecycle();
+        wireChat();
+    }
+
+    // ── lifecycle → Frappe controllers ──────────────────────────────────
+    function wireLifecycle() {
+        api.addListener("videoConferenceJoined", function () {
+            call("participant_joined", { meeting_name: MEETING_NAME });
+        });
+        api.addListener("videoConferenceLeft", function () {
+            // The local-user-specific leave event (participantLeft fires for
+            // anyone). participant_left auto-ends the meeting if nobody's left.
+            call("participant_left", { meeting_name: MEETING_NAME });
+        });
+        api.addListener("readyToClose", function () {
+            // Last person standing — flip status to Ended and finalize duration.
+            call("meeting_ended", { meeting_name: MEETING_NAME }).then(function () {
+                window.location.href = "/app/meeting/" + MEETING_NAME;
+            });
+        });
+    }
+
+    // ── chat archive (P6) ───────────────────────────────────────────────
+    // Verified against the Jitsi IFrame API events reference:
+    //   - "incomingMessage"  → { from, nick, privateMessage, message, stamp }
+    //                          fires for messages from OTHER participants.
+    //   - "outgoingMessage"  → { message, privateMessage }
+    //                          fires for the LOCAL user's own messages.
+    //   - "chatUpdated"      → { isOpen, unreadCount } only — no message text,
+    //                          so it's useless for archiving (the plan's
+    //                          assumed event was wrong; see commit message).
+    // We archive group (non-private) messages from both events so the saved
+    // transcript includes everyone, including the local user.
+    function wireChat() {
+        api.addListener("incomingMessage", function (e) {
+            if (!e || e.privateMessage || !e.message) return;
+            call("archive_chat_message", {
+                meeting_name: MEETING_NAME,
+                sender: e.nick || e.from || "guest",
+                message: e.message,
+                timestamp: e.stamp || "",
+            });
+        });
+        api.addListener("outgoingMessage", function (e) {
+            if (!e || e.privateMessage || !e.message) return;
+            call("archive_chat_message", {
+                meeting_name: MEETING_NAME,
+                sender: USER_NAME,
+                message: e.message,
+                timestamp: "",
+            });
+        });
+    }
 })();
 </script>
 {%- endblock -%}

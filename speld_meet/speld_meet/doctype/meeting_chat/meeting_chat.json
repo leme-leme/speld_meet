@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "creation": "2026-05-20 00:00:00",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "sender",
+  "message",
+  "timestamp"
+ ],
+ "fields": [
+  {
+   "fieldname": "sender",
+   "fieldtype": "Data",
+   "label": "Sender",
+   "in_list_view": 1,
+   "description": "Display name (Jitsi nick) of the participant who sent the message. Not a User link — guests in a public room have no Frappe account."
+  },
+  {
+   "fieldname": "message",
+   "fieldtype": "Small Text",
+   "label": "Message",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "timestamp",
+   "fieldtype": "Datetime",
+   "label": "Timestamp",
+   "in_list_view": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-05-20 00:00:00",
+ "modified_by": "Administrator",
+ "module": "Speld Meet",
+ "name": "Meeting Chat",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

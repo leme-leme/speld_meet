@@ -43,10 +43,11 @@ class Meeting(Document):
             self.status = "Scheduled"
 
     def before_save(self):
-        # When the operator (or the meeting_ended controller) flips status
-        # to Ended, snapshot the wall-clock duration from scheduled_time to
-        # now. Cheap and inaccurate; the controllers in `controllers.py` can
-        # override with a more precise value if needed.
+        # Last-resort duration fallback. The whitelisted helpers in
+        # `controllers.py` (_finalize_duration) compute the precise
+        # first-join → last-leave span and set duration_seconds BEFORE save,
+        # so this only fires when status was flipped to Ended by hand in the
+        # desk with no participant join data — snapshot scheduled_time → now.
         if (
             self.status == "Ended"
             and not self.duration_seconds

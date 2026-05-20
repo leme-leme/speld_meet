@@ -46,12 +46,18 @@ def get_context(context):
 
     token = mint_jwt(meeting.name)
 
+    host_full_name = (
+        frappe.db.get_value("User", meeting.host, "full_name")
+        if meeting.host else None
+    ) or meeting.host or "—"
+
     # Context shape for the Jinja template below.
     context.update({
         "meeting": meeting,
         "jwt": token["jwt"],
         "room": token["room"],
         "jitsi_host": token["domain"],
+        "host_full_name": host_full_name,
         "user_full_name": frappe.db.get_value("User", frappe.session.user, "full_name") or frappe.session.user,
     })
     return context

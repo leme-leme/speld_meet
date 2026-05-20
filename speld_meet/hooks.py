@@ -18,12 +18,28 @@ required_apps = ["frappe"]
 #   bench --site <site> execute speld_meet.setup.install_jitsi.install_jitsi
 # See speld_meet.setup.install_jitsi.install_jitsi for the full lifecycle.
 
-# Map `/meet/<room_slug>` directly to the dynamic SPA template. The
-# generic `meet/<room_slug>.html` template handles the role-check +
-# JWT-mint server-side at render time so the page ships with the
-# user-scoped token already embedded.
+# Website routes. Order matters — the exact `/meet` index is listed before
+# the `/meet/<room_slug>` rule so the bare index isn't swallowed as a slug.
+#
+#  - /meet                → meetings index SPA (list + "New meeting")
+#  - /meet/<room_slug>    → the room SPA; the template handles the role-check
+#                           + JWT-mint server-side at render so the page ships
+#                           with the user-scoped token already embedded.
+#  - /.well-known/...      → P5 mobile deep-link files (universal/app links).
+#                           Rewritten to plain-ASCII www pages because Frappe
+#                           won't serve a dot-prefixed www/ directory and its
+#                           static renderer refuses .json. See speld_meet.mobile.
 website_route_rules = [
+    {"from_route": "/meet", "to_route": "meet_index"},
     {"from_route": "/meet/<room_slug>", "to_route": "meet"},
+    {
+        "from_route": "/.well-known/apple-app-site-association",
+        "to_route": "well_known_aasa",
+    },
+    {
+        "from_route": "/.well-known/assetlinks.json",
+        "to_route": "well_known_assetlinks",
+    },
 ]
 
 # Frappe_appointment integration. The handler GUARDS itself with a
@@ -41,8 +57,14 @@ doc_events = {
 add_to_apps_screen = [
     {
         "name": "speld_meet",
-        "logo": "/assets/frappe/icons/timeless/video.svg",
+        # Frappe v15's timeless set ships no standalone video.svg — the glyphs
+        # are bundled in a sprite. App-picker logos need a direct image URL, so
+        # we reuse the message glyph (same fallback the speld app's newsletter
+        # entry uses) until a real Meet logo asset ships.
+        "logo": "/assets/frappe/icons/timeless/message.svg",
+        # Land on the /meet index SPA (list + New meeting), not the desk
+        # doctype list — the index is the editor-facing entry point.
         "title": "Meet",
-        "route": "/app/meeting",
+        "route": "/meet",
     },
 ]

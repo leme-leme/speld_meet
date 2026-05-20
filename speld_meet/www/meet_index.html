@@ -1,0 +1,135 @@
+{% extends "templates/web.html" %}
+
+{%- block title -%}Speld Meet{%- endblock -%}
+
+{%- block head_include -%}
+<style>
+    .meet-index { max-width: 760px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+    .meet-index h1 { font-size: 1.6rem; margin-bottom: 0.25rem; }
+    .meet-index .muted { color: var(--text-muted, #6c757d); }
+    .meet-list { list-style: none; padding: 0; margin: 0.75rem 0 2rem; }
+    .meet-row {
+        display: flex; align-items: center; gap: 0.75rem;
+        padding: 0.7rem 0.9rem; border: 1px solid var(--border-color, #e2e6ea);
+        border-radius: 8px; margin-bottom: 0.5rem;
+    }
+    .meet-row .title { font-weight: 600; }
+    .meet-row .meta { font-size: 0.82rem; color: var(--text-muted, #6c757d); }
+    .meet-row .spacer { flex: 1; }
+    .meet-row .badge-status { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .meet-empty { color: var(--text-muted, #6c757d); font-style: italic; padding: 0.5rem 0; }
+    .meet-actions { margin: 1rem 0 1.5rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .copied { color: #2e7d32 !important; }
+</style>
+{%- endblock -%}
+
+{%- block content -%}
+<div class="meet-index">
+    <h1>Speld Meet</h1>
+    <div class="muted">Video rooms for the De Speld newsroom — {{ user_full_name }}</div>
+
+    <div class="meet-actions">
+        <button id="new-meeting" class="btn btn-primary btn-sm">New meeting</button>
+        <a href="/app/meeting" class="btn btn-default btn-sm">All meetings (desk)</a>
+    </div>
+
+    <h5>Upcoming &amp; active</h5>
+    <ul class="meet-list" id="upcoming"><li class="meet-empty">Loading…</li></ul>
+
+    <h5>Recent</h5>
+    <ul class="meet-list" id="recent"><li class="meet-empty">Loading…</li></ul>
+</div>
+
+<script>
+(function () {
+    function esc(s) {
+        return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+            return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+    }
+
+    function fmtDur(sec) {
+        sec = parseInt(sec || 0, 10);
+        if (!sec) return "";
+        var m = Math.round(sec / 60);
+        return m + " min";
+    }
+
+    function copyLink(slug, btn) {
+        var url = window.location.origin + "/meet/" + slug;
+        navigator.clipboard.writeText(url).then(function () {
+            var old = btn.textContent;
+            btn.textContent = "Copied!";
+            btn.classList.add("copied");
+            setTimeout(function () { btn.textContent = old; btn.classList.remove("copied"); }, 1500);
+        });
+    }
+
+    function rowHtml(m) {
+        var status = esc(m.status);
+        var when = m.scheduled_time ? esc(m.scheduled_time) : "";
+        var dur = fmtDur(m.duration_seconds);
+        var meta = [when, dur].filter(Boolean).join(" · ");
+        return '<li class="meet-row" data-slug="' + esc(m.room_slug) + '">' +
+            '<div>' +
+                '<div class="title">' + esc(m.title) + '</div>' +
+                '<div class="meta">' + meta + ' · host ' + esc(m.host) + '</div>' +
+            '</div>' +
+            '<div class="spacer"></div>' +
+            '<span class="badge badge-light border badge-status">' + status + '</span>' +
+            '<a class="btn btn-xs btn-primary" href="/meet/' + encodeURIComponent(m.room_slug) + '">Join</a>' +
+            '<button class="btn btn-xs btn-default copy-btn">Copy link</button>' +
+        '</li>';
+    }
+
+    function fill(ulId, items) {
+        var ul = document.getElementById(ulId);
+        if (!items || !items.length) {
+            ul.innerHTML = '<li class="meet-empty">None.</li>';
+            return;
+        }
+        ul.innerHTML = items.map(rowHtml).join("");
+        ul.querySelectorAll(".copy-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+                copyLink(btn.closest(".meet-row").getAttribute("data-slug"), btn);
+            });
+        });
+    }
+
+    function load() {
+        frappe.call({ method: "speld_meet.controllers.my_meetings" })
+            .then(function (r) {
+                var d = (r && r.message) || { upcoming: [], recent: [] };
+                fill("upcoming", d.upcoming);
+                fill("recent", d.recent);
+            })
+            .catch(function (err) {
+                console.warn("speld_meet:my_meetings failed", err);
+                document.getElementById("upcoming").innerHTML =
+                    '<li class="meet-empty">Could not load meetings.</li>';
+                document.getElementById("recent").innerHTML = "";
+            });
+    }
+
+    document.getElementById("new-meeting").addEventListener("click", function () {
+        var btn = this;
+        btn.disabled = true;
+        btn.textContent = "Creating…";
+        frappe.call({ method: "speld_meet.controllers.create_instant_meeting" })
+            .then(function (r) {
+                var m = r && r.message;
+                if (m && m.url) { window.location.href = m.url; }
+                else { btn.disabled = false; btn.textContent = "New meeting"; load(); }
+            })
+            .catch(function (err) {
+                console.warn("speld_meet:create_instant_meeting failed", err);
+                btn.disabled = false;
+                btn.textContent = "New meeting";
+                frappe.msgprint && frappe.msgprint("Could not create a meeting.");
+            });
+    });
+
+    load();
+})();
+</script>
+{%- endblock -%}

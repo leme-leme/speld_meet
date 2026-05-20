@@ -16,6 +16,9 @@
   "participants",
   "section_break_roles",
   "required_roles",
+  "section_break_chat",
+  "raven_channel",
+  "chat_log",
   "section_break_meta",
   "recording_file_url"
  ],
@@ -85,6 +88,24 @@
    "options": "Meeting Required Role",
    "label": "Required roles",
    "description": "If any rows are present, joining users must hold at least one of these Frappe roles. Empty = open to anyone with the Meeting record's URL."
+  },
+  {
+   "fieldname": "section_break_chat",
+   "fieldtype": "Section Break",
+   "label": "Chat archive"
+  },
+  {
+   "fieldname": "raven_channel",
+   "fieldtype": "Data",
+   "label": "Raven channel",
+   "description": "ID of the Raven Channel chat is archived into, if Raven is installed. Created lazily on first message by ensure_raven_channel(). Empty = chat falls back to the Chat log child table below."
+  },
+  {
+   "fieldname": "chat_log",
+   "fieldtype": "Table",
+   "options": "Meeting Chat",
+   "label": "Chat log",
+   "description": "Raven-less fallback: in-room chat messages archived here so they persist past the call."
   },
   {
    "fieldname": "section_break_meta",
