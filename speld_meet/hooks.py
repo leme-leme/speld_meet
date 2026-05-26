@@ -51,20 +51,25 @@ doc_events = {
     },
 }
 
-# Speld Meet entry on the /apps picker. Speld owns the picker definition
-# for first-party apps (see speld/hooks.py); we self-register here too so
-# the app shows up on benches that have speld_meet but not the speld app.
+# Speld Meet entry on the /apps picker — self-registered. The speld app
+# used to declare this entry too which made the tile appear twice on /apps;
+# that duplicate was removed (see speld/hooks.py).
 add_to_apps_screen = [
     {
         "name": "speld_meet",
-        # Frappe v15's timeless set ships no standalone video.svg — the glyphs
-        # are bundled in a sprite. App-picker logos need a direct image URL, so
-        # we reuse the message glyph (same fallback the speld app's newsletter
-        # entry uses) until a real Meet logo asset ships.
-        "logo": "/assets/frappe/icons/timeless/message.svg",
+        "logo": "/assets/speld_meet/icons/meet.svg",
         # Land on the /meet index SPA (list + New meeting), not the desk
         # doctype list — the index is the editor-facing entry point.
         "title": "Meet",
         "route": "/meet",
     },
 ]
+
+# Desk navbar logo override. Raven's hooks.py sets `app_logo_url` to the
+# Raven brand tile, and Frappe's hook resolution picks the LAST installed
+# app's value — so we redeclare here (speld_meet is the last app in the
+# manifest) to make sure the Speld brand always wins, even if install
+# order ever bumps speld ahead of raven. The asset lives in the speld app
+# so a bench without speld but with speld_meet still shows it (broken)
+# rather than silently fall back to raven's logo.
+app_logo_url = "/assets/speld/icons/speld-logo.svg"
